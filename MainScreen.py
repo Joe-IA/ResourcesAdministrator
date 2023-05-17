@@ -3,7 +3,16 @@ import tkinter as tk
 from tkinter import ttk
 from ProcessInfo import ProcessInfo
 import psutil
+import time
+import threading
+import matplotlib
+matplotlib.use("TkAgg")
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.figure import Figure
 
+# Global variables for filters
+selectedFilter = None
+searchedText = None
 
 def ProcessObtain():
     processInfo = ProcessInfo()
@@ -15,57 +24,76 @@ def TableFill(totalMemory, processes):
         for process in processes:
             memoryInfo = process.memory_info()
             physicalMemory = memoryInfo.rss
-            cpuPercentage = process.cpu_percent() * 100 / psutil.cpu_count()
+            cpuPercentage = process.cpu_percent(interval=0) * 100 / psutil.cpu_count()
             memoryPercentage = physicalMemory / totalMemory * 100
             table.insert("", tk.END, values=(process.pid, process.name(), process.username(), process.nice(), process.status(), f"{cpuPercentage:.2f}%", f"{memoryPercentage:.2f}%"))
     except:
         pass
 
-def updateTable(processes):
-    global totalMemory
+def updateTable():
+    global totalMemory, selectedFilter, searchedText
     table.delete(*table.get_children())
+    processes = ProcessObtain()
+    if selectedFilter and searchedText:
+        processes = [process for process in processes if filterProcess(process, selectedFilter, searchedText)]
     TableFill(totalMemory, processes)
-    processesFrame.after(1000, lambda: updateTable(processes))
+    processesFrame.after(1000, updateTable)
 
+def filterProcess(process, selectedColumn, searchedText):
+    try:
+        if selectedColumn == 'Name' and searchedText.lower() in process.name().lower():
+            return True
+        elif selectedColumn == 'User' and searchedText.lower() in process.username().lower():
+            return True
+        elif selectedColumn == 'Status' and searchedText.lower() in process.status().lower():
+            return True
+        elif selectedColumn== 'Priority' and searchedText.lower() in str(process.nice()).lower():
+            return True
+        else:
+            return False
+    except Exception:
+        return False
 
-def applyfilters(processes):
-
-    global totalMemory
-    selectedColumn= selectedOption.get()
+def applyfilters():
+    global selectedFilter, searchedText
+    selectedFilter = selectedOption.get()
     searchedText = entry.get()
+    updateTable()
 
-    filteredProcesses = []
-    for process  in processes:
-        try:
-            if selectedColumn == 'Name' and searchedText.lower() in process.name().lower():
-                filteredProcesses.append(process)
-            elif selectedColumn == 'User' and searchedText.lower() in process.username().lower():
-                filteredProcesses.append(process)
-            elif selectedColumn == 'Status' and searchedText.lower() in process.status().lower():
-                filteredProcesses.append(process)
-            elif selectedColumn== 'Priority' and searchedText.lower() in str(process.nice()).lower():
-                filteredProcesses.append(process)
-        except Exception:
-            pass
-    updateTable(filteredProcesses)
-
-
-
-def clearFilters(processes):
+def clearFilters():
+    global selectedFilter, searchedText
     entry.delete(0, tk.END)
     selectedOption.set("Select")
-    try:
-        table.delete(*table.get_children())
-        updateTable(processes)
-    except Exception:
-        pass
+    selectedFilter = None
+    searchedText = None
+    updateTable()
 
+def animate(i, fig, ax, ys, ylabel):
+    # Add y to data
+    ys.append(psutil.cpu_percent() if ylabel == 'CPU' else psutil.virtual_memory().percent)
+
+    # Limit y list to set number of items
+    ys = ys[-x_len:]
+
+    ax.clear()
+    ax.plot(ys, label='{} usage (%)'.format(ylabel), color='b' if ylabel == 'CPU' else 'r')
+    
+    # Format plot
+    ax.legend(loc='upper left')
+    ax.set_title('{} usage over Time'.format(ylabel))
+    ax.set_ylabel('Usage (%)')
+    ax.set_ylim(0, 100)
+    fig.canvas.draw()
+
+def draw_plot(fig, ax, ys, canvas, ylabel):
+    while True:
+        animate(1, fig, ax, ys, ylabel)
+        canvas.draw()
 
 #Main window
 root = Tk()
 root.title("Resources Manager")
 root.geometry("1200x800")
-
 
 #Notebook
 style = ttk.Style()
@@ -73,11 +101,10 @@ style.configure("TNotebook.Tab", focuscolor="")
 notebook = ttk.Notebook(root, style="TNotebook")
 processesFrame = ttk.Frame(notebook)
 processesFrame.pack(fill=tk.BOTH, expand=True)
-performaceFrame = ttk.Notebook(notebook)
+performaceFrame = ttk.Frame(notebook)
 notebook.add(processesFrame, text="Processes")
 notebook.add(performaceFrame, text="Performance")
 notebook.pack(fill=tk.BOTH, expand=True)
-
 
 #Table
 table = ttk.Treeview(processesFrame)
@@ -95,7 +122,6 @@ table.column("PRIORITY", width=70)
 for column in table['columns']:
     table.column(column,anchor='center')
 totalMemory = psutil.virtual_memory().total
-processes = ProcessObtain()
 scrollbar = ttk.Scrollbar(processesFrame, orient='vertical', command=table.yview)
 table.configure(yscrollcommand=scrollbar.set)
 processesFrame.grid_rowconfigure(1, weight=1)
@@ -123,12 +149,34 @@ dropdown.grid(row=0, column=1,sticky="W")
 #Filter
 entry = tk.Entry(container, width=50)
 entry.grid(row=0, column=2, sticky="NSEW")
-buttonApply = tk.Button(container, text="Apply", command= lambda: applyfilters(processes))
+buttonApply = tk.Button(container, text="Apply", command=applyfilters)
 buttonApply.grid(row=0, column=3, sticky="E")
-buttonClear = tk.Button(container, text="Clear filters", command= lambda: clearFilters(processes))
+buttonClear = tk.Button(container, text="Clear filters", command=clearFilters)
 buttonClear.grid(row=0, column=4, sticky="W")
 
+# Performance Plots
+# Create figure for plotting
+fig_cpu = Figure(figsize=(5, 4), dpi=100)
+fig_mem = Figure(figsize=(5, 4), dpi=100)
 
+ax_cpu = fig_cpu.add_subplot(1, 1, 1)
+ax_mem = fig_mem.add_subplot(1, 1, 1)
 
-updateTable(processes)
+# x variable for plotting
+x_len = 200
+ys_cpu = [0] * x_len
+ys_mem = [0] * x_len
+
+# Create canvas
+canvas_cpu = FigureCanvasTkAgg(fig_cpu, master=performaceFrame)
+canvas_mem = FigureCanvasTkAgg(fig_mem, master=performaceFrame)
+
+canvas_cpu.get_tk_widget().grid(row=0, column=0)
+canvas_mem.get_tk_widget().grid(row=1, column=0)
+
+# Start separate thread for each plot
+threading.Thread(target=draw_plot, args=(fig_cpu, ax_cpu, ys_cpu, canvas_cpu, 'CPU')).start()
+threading.Thread(target=draw_plot, args=(fig_mem, ax_mem, ys_mem, canvas_mem, 'Memory')).start()
+
+updateTable()
 root.mainloop()
