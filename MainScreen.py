@@ -1,9 +1,8 @@
 from tkinter import *
-import tkinter as tk
+from mttkinter import mtTkinter as tk
 from tkinter import ttk
 from ProcessInfo import ProcessInfo
 import psutil
-import time
 import threading
 import matplotlib
 matplotlib.use("TkAgg")
@@ -20,13 +19,16 @@ def ProcessObtain():
     return processes
 
 def TableFill(totalMemory, processes):
+    users = {}
+    cont = 0
     try:
         for process in processes:
             memoryInfo = process.memory_info()
             physicalMemory = memoryInfo.rss
-            cpuPercentage = process.cpu_percent(interval=0) * 100 / psutil.cpu_count()
+            cpuPercentage = (process.cpu_percent(interval=0) * 100) / psutil.cpu_count()
             memoryPercentage = physicalMemory / totalMemory * 100
-            table.insert("", tk.END, values=(process.pid, process.name(), process.username(), process.nice(), process.status(), f"{cpuPercentage:.2f}%", f"{memoryPercentage:.2f}%"))
+            table.insert("", tk.END, values=(process.pid, process.name(), process.username(), process.status(), f"{cpuPercentage:.2f}%", f"{memoryPercentage:.2f}%"))
+
     except:
         pass
 
@@ -37,7 +39,7 @@ def updateTable():
     if selectedFilter and searchedText:
         processes = [process for process in processes if filterProcess(process, selectedFilter, searchedText)]
     TableFill(totalMemory, processes)
-    processesFrame.after(1000, updateTable)
+    processesFrame.after(1250, updateTable)
 
 def filterProcess(process, selectedColumn, searchedText):
     try:
@@ -46,8 +48,6 @@ def filterProcess(process, selectedColumn, searchedText):
         elif selectedColumn == 'User' and searchedText.lower() in process.username().lower():
             return True
         elif selectedColumn == 'Status' and searchedText.lower() in process.status().lower():
-            return True
-        elif selectedColumn== 'Priority' and searchedText.lower() in str(process.nice()).lower():
             return True
         else:
             return False
@@ -89,11 +89,12 @@ def draw_plot(fig, ax, ys, canvas, ylabel):
     while True:
         animate(1, fig, ax, ys, ylabel)
         canvas.draw()
+       
 
 #Main window
 root = Tk()
 root.title("Resources Manager")
-root.geometry("1200x800")
+root.geometry("1200x820")
 
 #Notebook
 style = ttk.Style()
@@ -102,23 +103,25 @@ notebook = ttk.Notebook(root, style="TNotebook")
 processesFrame = ttk.Frame(notebook)
 processesFrame.pack(fill=tk.BOTH, expand=True)
 performaceFrame = ttk.Frame(notebook)
+performaceFrame.pack(fill=tk.BOTH, expand=True)
+usersFrame = ttk.Frame(notebook)
+usersFrame.pack(fill=tk.BOTH, expand=True)
 notebook.add(processesFrame, text="Processes")
 notebook.add(performaceFrame, text="Performance")
+notebook.add(usersFrame, text="Users")
 notebook.pack(fill=tk.BOTH, expand=True)
 
-#Table
+#Table of processes
 table = ttk.Treeview(processesFrame)
-table['columns'] = ('PID', 'NAME','USER', 'PRIORITY','STATUS', 'CPU', 'MEMORY')
+table['columns'] = ('PID', 'NAME','USER', 'STATUS', 'CPU', 'MEMORY')
 table.heading('PID', text='PID')
 table.heading('NAME', text='NAME')
 table.heading('USER', text='USER')
-table.heading('PRIORITY', text='PRIORITY')
 table.heading('STATUS', text='STATUS')
 table.heading('CPU', text='CPU')
 table.heading('MEMORY',text='MEMORY')
 table.column('#0', width=0, stretch=tk.NO)
 table.column("PID", width=50)
-table.column("PRIORITY", width=70)
 for column in table['columns']:
     table.column(column,anchor='center')
 totalMemory = psutil.virtual_memory().total
@@ -128,6 +131,19 @@ processesFrame.grid_rowconfigure(1, weight=1)
 processesFrame.grid_columnconfigure(0, weight=1)
 table.grid(row=1,column=0,sticky='nsew')
 scrollbar.grid(row=1,column=1,sticky='ns')
+
+
+#Table of users
+userTable = ttk.Treeview(usersFrame)
+userTable["columns"] = ("User", "Processor", "Memory", "Swap")
+userTable.heading("User", text="User")
+userTable.heading("Processor", text="Processor")
+userTable.heading("Memory", text="Memory")
+userTable.heading("Swap", text="Swap")
+userTable.column('#0', width=0, stretch=tk.NO)
+for column in userTable['columns']:
+    userTable.column(column,anchor='center')
+userTable.grid(row=0, column=0, sticky="nsew")
 
 #Container
 container = tk.Frame(processesFrame)
@@ -143,7 +159,7 @@ label.grid(row=0, column=0, sticky="E")
 
 #Dropdown
 selectedOption = tk.StringVar()
-dropdown = ttk.OptionMenu(container, selectedOption, 'Select','Name', 'User', 'Status', 'Priority')
+dropdown = ttk.OptionMenu(container, selectedOption, 'Select','Name', 'User', 'Status')
 dropdown.grid(row=0, column=1,sticky="W")
 
 #Filter
@@ -174,9 +190,11 @@ canvas_mem = FigureCanvasTkAgg(fig_mem, master=performaceFrame)
 canvas_cpu.get_tk_widget().grid(row=0, column=0)
 canvas_mem.get_tk_widget().grid(row=1, column=0)
 
+
 # Start separate thread for each plot
 threading.Thread(target=draw_plot, args=(fig_cpu, ax_cpu, ys_cpu, canvas_cpu, 'CPU')).start()
 threading.Thread(target=draw_plot, args=(fig_mem, ax_mem, ys_mem, canvas_mem, 'Memory')).start()
+
 
 updateTable()
 root.mainloop()
