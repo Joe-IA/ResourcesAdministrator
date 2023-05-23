@@ -34,7 +34,6 @@ if __name__ == '__main__':
         cpuPercentage = (process.cpu_percent() * 100) / psutil.cpu_count()
         usersMemory[users[process.username()]] += process.memory_info().rss / psutil.virtual_memory().total
         usersProcessor[users[process.username()]] += cpuPercentage
-        #usersSwap[users[process.name()]] += process.memory_info().swap
 
 
     arrayNames = [clave for clave in users.keys()]
